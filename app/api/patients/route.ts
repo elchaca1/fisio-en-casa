@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createClient } from "../../lib/supabase/server";
+import { getAccessContext } from "../../lib/auth/access";
 
 export const dynamic = "force-dynamic";
 
@@ -41,16 +41,16 @@ function noStore(body: Record<string, unknown>, status = 200) {
   return NextResponse.json(body, { status, headers: { "Cache-Control": "private, no-store" } });
 }
 
-async function getOwnerId() {
-  const supabase = await createClient();
-  const { data } = await supabase.auth.getClaims();
-  return { supabase, ownerId: data?.claims?.sub ?? null };
+async function getClinicianContext() {
+  const { supabase, userId, role } = await getAccessContext();
+  return { supabase, ownerId: userId, isPhysiotherapist: role === "physio" };
 }
 
 export async function GET() {
   try {
-    const { supabase, ownerId } = await getOwnerId();
+    const { supabase, ownerId, isPhysiotherapist } = await getClinicianContext();
     if (!ownerId) return noStore({ error: "Tu sesión ha vencido. Inicia sesión nuevamente." }, 401);
+    if (!isPhysiotherapist) return noStore({ error: "Esta función está disponible solo para fisioterapeutas." }, 403);
 
     const { data, error } = await supabase
       .from("patients")
@@ -89,8 +89,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { supabase, ownerId } = await getOwnerId();
+    const { supabase, ownerId, isPhysiotherapist } = await getClinicianContext();
     if (!ownerId) return noStore({ error: "Tu sesión ha vencido. Inicia sesión nuevamente." }, 401);
+    if (!isPhysiotherapist) return noStore({ error: "Esta función está disponible solo para fisioterapeutas." }, 403);
 
     const { data, error } = await supabase
       .from("patients")
