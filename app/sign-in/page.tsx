@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../lib/supabase/client";
 import "./sign-in.css";
@@ -9,6 +9,24 @@ export default function SignInPage() {
   const router = useRouter();
   const [status, setStatus] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    try {
+      const supabase = createClient();
+      void supabase.auth.getSession().then(({ data }) => {
+        if (active && data.session) {
+          router.replace("/");
+          router.refresh();
+        }
+      });
+    } catch {
+      // The form will show a safe message if the connection is unavailable.
+    }
+    return () => {
+      active = false;
+    };
+  }, [router]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
