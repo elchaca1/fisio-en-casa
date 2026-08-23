@@ -13,10 +13,12 @@ export default function SignInPage() {
   useEffect(() => {
     let active = true;
     try {
+      const authType = new URLSearchParams(window.location.hash.slice(1)).get("type");
+      const needsPasswordSetup = authType === "invite" || authType === "recovery";
       const supabase = createClient();
       void supabase.auth.getSession().then(({ data }) => {
         if (active && data.session) {
-          router.replace("/");
+          router.replace(needsPasswordSetup ? "/set-password" : "/");
           router.refresh();
         }
       });
