@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { type FormEvent, useEffect, useState } from "react";
-import { createClient } from "../lib/supabase/client";
+import { createClient, createImplicitClient } from "../lib/supabase/client";
 import "./set-password.css";
 
 type PageState = "checking" | "ready" | "missing" | "success";
@@ -15,33 +15,44 @@ export default function SetPasswordPage() {
   useEffect(() => {
     let active = true;
 
-    try {
-      const supabase = createClient();
-      const revealForm = () => {
-        if (!active) return;
-        window.history.replaceState({}, document.title, "/set-password");
-        setPageState("ready");
-      };
-      const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-        if (session) revealForm();
-      });
+    const prepareSession = async () => {
+      try {
+        const hash = new URLSearchParams(window.location.hash.slice(1));
+        const hasImplicitSession = hash.has("access_token") && hash.has("refresh_token");
 
-      void supabase.auth.getSession().then(({ data, error }) => {
+        if (hasImplicitSession) {
+          const implicitClient = createImplicitClient();
+          const { data, error } = await implicitClient.auth.getSession();
+          if (error || !data.session) throw new Error("invalid-link");
+
+          window.history.replaceState({}, document.title, "/set-password");
+          const cookieClient = createClient();
+          const { error: sessionError } = await cookieClient.auth.setSession({
+            access_token: data.session.access_token,
+            refresh_token: data.session.refresh_token,
+          });
+          if (sessionError) throw sessionError;
+        }
+
+        const supabase = createClient();
+        const { data, error } = await supabase.auth.getSession();
         if (!active) return;
         if (error || !data.session) {
           setPageState("missing");
           return;
         }
-        revealForm();
-      });
 
-      return () => {
-        active = false;
-        listener.subscription.unsubscribe();
-      };
-    } catch {
-      setPageState("missing");
-    }
+        window.history.replaceState({}, document.title, "/set-password");
+        setPageState("ready");
+      } catch {
+        if (active) setPageState("missing");
+      }
+    };
+
+    void prepareSession();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
