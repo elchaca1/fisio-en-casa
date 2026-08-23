@@ -1,0 +1,188 @@
+"use client";
+
+import Link from "next/link";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
+
+type Therapy = "Física / Deportiva" | "Neurológica";
+type Patient = { id: string; name: string; initials: string; age: number | null; therapy: Therapy; diagnosis: string; frequency: string; plan: number; done: number; scheduled: number; progress: number; district: string; address: string; color: string };
+type PatientRecord = { id: string; full_name: string; birth_date: string | null; therapy_type: Therapy; diagnosis: string | null; session_frequency: string; plan_sessions: number; sessions_done: number; sessions_scheduled: number; progress: number; district: string | null; address: string | null };
+
+const colors = ["lilac", "blue", "peach", "mint"];
+const nav = ["Inicio", "Pacientes", "Agenda", "Evaluaciones"];
+const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+function ageFromDate(value: string | null) { if (!value) return null; const birth = new Date(`${value}T12:00:00`); const now = new Date(); let age = now.getFullYear() - birth.getFullYear(); if (now.getMonth() < birth.getMonth() || (now.getMonth() === birth.getMonth() && now.getDate() < birth.getDate())) age--; return age >= 0 && age <= 130 ? age : null; }
+function toPatient(record: PatientRecord): Patient { return { id: record.id, name: record.full_name, initials: initials(record.full_name), age: ageFromDate(record.birth_date), therapy: record.therapy_type, diagnosis: record.diagnosis || "Diagnóstico pendiente de registrar", frequency: record.session_frequency, plan: record.plan_sessions, done: record.sessions_done, scheduled: record.sessions_scheduled, progress: record.progress, district: record.district || "No registrado", address: record.address || "No registrada", color: colors[record.full_name.length % colors.length] }; }
+function Avatar({ patient }: { patient: Patient }) { return <span className={`avatar ${patient.color}`}>{patient.initials}</span>; }
+function Progress({ value }: { value: number }) { return <div className="progress"><i style={{ width: `${Math.max(0, Math.min(value, 100))}%` }} /></div>; }
+
+export default function ClinicianDashboard() {
+  const [view, setView] = useState("Inicio");
+  const [selected, setSelected] = useState<Patient | null>(null);
+  const [tab, setTab] = useState("Resumen");
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [agendaMode, setAgendaMode] = useState<"Día" | "Semana">("Día");
+  const [evalType, setEvalType] = useState<Therapy>("Neurológica");
+  const [interview, setInterview] = useState(false);
+  const [question, setQuestion] = useState(0);
+  const [finished, setFinished] = useState(false);
+
+  const loadPatients = async () => {
+    setLoading(true); setError("");
+    try { const response = await fetch("/api/patients", { cache: "no-store" }); const body = await response.json(); if (!response.ok) throw new Error(body.error || "No se pudo cargar la lista."); setPatients((body.patients as PatientRecord[]).map(toPatient)); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo cargar la lista."); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { void loadPatients(); }, []);
+  const visiblePatients = useMemo(() => patients.filter((patient) => `${patient.name} ${patient.diagnosis} ${patient.therapy}`.toLowerCase().includes(query.toLowerCase())), [patients, query]);
+  const goPatient = (patient: Patient) => { setSelected(patient); setTab("Resumen"); setView("Ficha"); };
+  const questions = evalType === "Neurológica" ? ["¿Cuál era su nivel de independencia antes del evento?", "¿Qué transferencias puede realizar actualmente sin ayuda?", "¿Ha presentado caídas o pérdida de equilibrio recientemente?", "¿Qué actividad cotidiana le gustaría recuperar primero?"] : ["¿En qué momento comenzó el dolor o la limitación?", "¿Qué movimiento o actividad lo agrava?", "¿Qué actividad deportiva desea retomar?", "¿Qué objetivos funcionales considera prioritarios?"];
+
+  return <main className="app-shell">
+    <aside className="sidebar"><div className="brand"><span className="brand-mark">✦</span><span>Fisio<span>EnCasa</span></span></div><p className="side-label">OPERACIÓN PRIVADA</p>{nav.map((name) => <button key={name} onClick={() => { setView(name); setInterview(false); }} className={view === name ? "nav active" : "nav"}><span>{name === "Inicio" ? "⌂" : name === "Pacientes" ? "♧" : name === "Agenda" ? "▣" : "◌"}</span>{name}</button>)}<div className="side-bottom"><Link className="nav" style={{ textDecoration: "none" }} href="/set-password"><span>⚙</span>Contraseña y seguridad</Link><button className="nav" onClick={() => { void fetch("/auth/signout", { method: "POST" }).finally(() => window.location.assign("/sign-in")); }}><span>↗</span>Cerrar sesión</button><div className="profile"><span className="avatar tiny blue">JM</span><div><b>Espacio privado</b><small>Fisioterapeuta</small></div><span>●</span></div></div></aside>
+    <section className="content"><header className="topbar"><button className="mobile-logo" onClick={() => setView("Inicio")}>✦</button><div className="crumb">{view === "Ficha" && selected ? <><button onClick={() => setView("Pacientes")}>Pacientes</button><span>/</span><b>{selected.name}</b></> : <b>{view}</b>}</div><div className="top-actions"><button className="icon-btn" aria-label="Buscar">⌕</button><button className="primary" onClick={() => setModalOpen(true)}>＋ <span>Nuevo paciente</span></button></div></header>
+      {view === "Inicio" && <Dashboard patients={patients} onPatient={goPatient} onNew={() => setModalOpen(true)} onAgenda={() => setView("Agenda")} />}
+      {view === "Pacientes" && <Patients list={visiblePatients} total={patients.length} loading={loading} error={error} query={query} setQuery={setQuery} onPatient={goPatient} onNew={() => setModalOpen(true)} onRetry={() => void loadPatients()} />}
+      {view === "Ficha" && selected && <PatientFile patient={selected} tab={tab} setTab={setTab} onStart={() => setView("Agenda")} />}
+      {view === "Agenda" && <Agenda mode={agendaMode} setMode={setAgendaMode} />}
+      {view === "Evaluaciones" && <Evaluation interview={interview} setInterview={setInterview} type={evalType} setType={setEvalType} question={question} setQuestion={setQuestion} questions={questions} finished={finished} setFinished={setFinished} />}
+    </section>
+    <nav className="bottom-nav">{nav.map((name) => <button key={name} className={view === name ? "active" : ""} onClick={() => setView(name)}><span>{name === "Inicio" ? "⌂" : name === "Pacientes" ? "♧" : name === "Agenda" ? "▣" : "◌"}</span>{name}</button>)}</nav>
+    {modalOpen && <NewPatientModal onClose={() => setModalOpen(false)} onCreated={(record) => { const patient = toPatient(record); setPatients((current) => [patient, ...current]); setSelected(patient); setModalOpen(false); setView("Ficha"); }} />}
+  </main>;
+}
+
+function Dashboard({ patients, onPatient, onNew, onAgenda }: { patients: Patient[]; onPatient: (patient: Patient) => void; onNew: () => void; onAgenda: () => void }) {
+  const followUps = patients.filter((patient) => patient.scheduled === 0).slice(0, 2);
+  return <div className="page"><div className="welcome"><div><p className="eyebrow">ESPACIO CLÍNICO PRIVADO</p><h1>Buen día <span>👋</span></h1><p>Los registros de pacientes están protegidos por tu sesión.</p></div><button className="primary" onClick={onNew}>＋ Registrar paciente</button></div><div className="stats"><Stat icon="♧" value={String(patients.length)} label="Pacientes activos" tone="purple"/><Stat icon="▣" value="0" label="Atenciones hoy" tone="blue"/><Stat icon="✓" value="0" label="Sesiones esta semana" tone="mint"/><Stat icon="!" value={String(followUps.length)} label="Seguimientos pendientes" tone="peach"/></div><div className="two-cols"><section className="card agenda-card"><div className="section-head"><div><h2>Agenda de hoy</h2><p>La agenda real estará disponible en la siguiente fase.</p></div><button className="text-btn" onClick={onAgenda}>Ver agenda →</button></div><div className="blank-panel"><span>▣</span><b>No hay atenciones programadas</b><p>Registra primero a tus pacientes para comenzar a organizar su agenda.</p><button className="new-appointment" onClick={onNew}>＋ Registrar paciente</button></div></section><section className="card follow-card"><div className="section-head"><div><h2>Necesitan seguimiento</h2><p>Pacientes sin próxima cita</p></div><button className="text-btn" onClick={onAgenda}>Ver agenda →</button></div>{followUps.length ? followUps.map((patient) => <button className="follow" key={patient.id} onClick={() => onPatient(patient)}><Avatar patient={patient}/><div><strong>{patient.name}</strong><small>Sin próxima cita registrada</small></div><span>›</span></button>) : <div className="empty-follow">Los pacientes que requieran una nueva cita aparecerán aquí.</div>}<div className="tip"><span>✦</span><p><b>Privacidad activa</b><br/>Los pacientes solo son visibles dentro de tu cuenta.</p></div></section></div></div>;
+}
+function Stat({ icon, value, label, tone }: { icon: string; value: string; label: string; tone: string }) { return <div className="stat card"><span className={`stat-icon ${tone}`}>{icon}</span><div><b>{value}</b><p>{label}</p></div></div>; }
+
+function Patients({ list, total, loading, error, query, setQuery, onPatient, onNew, onRetry }: { list: Patient[]; total: number; loading: boolean; error: string; query: string; setQuery: (value: string) => void; onPatient: (patient: Patient) => void; onNew: () => void; onRetry: () => void }) {
+  return <div className="page"><div className="title-row"><div><p className="eyebrow">GESTIÓN CLÍNICA PRIVADA</p><h1>Pacientes</h1><p>Administra únicamente los pacientes registrados en tu cuenta.</p></div><button className="primary" onClick={onNew}>＋ Nuevo paciente</button></div><div className="toolbar"><label className="search">⌕<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nombre, diagnóstico..."/></label><button className="filter">♙ Datos protegidos</button></div>{error && <div className="inline-error"><b>Error al cargar.</b><span>{error}</span><button onClick={onRetry}>Reintentar</button></div>}<div className="patient-table card"><div className="table-head"><span>Paciente</span><span>Tratamiento</span><span>Próxima sesión</span><span>Progreso</span><span></span></div>{loading ? <div className="empty-table">Cargando registros privados…</div> : list.length ? list.map((patient) => <button className="patient-row" onClick={() => onPatient(patient)} key={patient.id}><div className="patient-name"><Avatar patient={patient}/><span><strong>{patient.name}</strong><small>{patient.age === null ? "Edad no registrada" : `${patient.age} años`} · {patient.therapy}</small></span></div><div><strong>{patient.diagnosis}</strong><small>{patient.frequency}</small></div><div><strong>{patient.scheduled ? "Cita programada" : "Sin próxima cita"}</strong><small>{patient.district}</small></div><div className="row-progress"><b>{patient.progress}%</b><Progress value={patient.progress}/></div><span className="chevron">›</span></button>) : <div className="empty-table"><span>♧</span><b>Aún no hay pacientes registrados</b><p>Usa “Nuevo paciente” para crear el primer registro real.</p><button className="primary" onClick={onNew}>＋ Registrar paciente</button></div>}</div><p className="table-count">{loading ? "" : `Mostrando ${list.length} de ${total} pacientes registrados`}</p></div>;
+}
+
+function PatientFile({ patient, tab, setTab, onStart }: { patient: Patient; tab: string; setTab: (value: string) => void; onStart: () => void }) {
+  const tabs = ["Resumen", "Evaluación inicial", "Sesiones", "Evolución", "Progreso"];
+  return <div className="page"><div className="file-header"><Avatar patient={patient}/><div><p className="eyebrow">REGISTRO PRIVADO</p><h1>{patient.name}</h1><p>{patient.age === null ? "Edad no registrada" : `${patient.age} años`} · {patient.therapy}</p></div><button className="primary file-action" onClick={onStart}>▶ Iniciar sesión</button></div><div className="tabs">{tabs.map((name) => <button onClick={() => setTab(name)} className={tab === name ? "selected" : ""} key={name}>{name}</button>)}</div>{tab === "Resumen" ? <><div className="file-grid"><section className="card info"><h2>Resumen clínico</h2><dl><div><dt>Diagnóstico referido</dt><dd>{patient.diagnosis}</dd></div><div><dt>Zona de atención</dt><dd>{patient.district}</dd></div><div><dt>Dirección</dt><dd>{patient.address}</dd></div><div><dt>Frecuencia acordada</dt><dd>{patient.frequency}</dd></div></dl></section><section className="card plan"><h2>Plan de sesiones</h2><div className="big-progress"><b>{patient.done}<small> / {patient.plan}</small></b><span>sesiones realizadas</span><Progress value={patient.plan ? (patient.done / patient.plan) * 100 : 0}/></div><div className="plan-breakdown"><span><b>{patient.done}</b>Realizadas</span><span><b>{patient.scheduled}</b>Agendadas</span><span><b>{Math.max(patient.plan - patient.done - patient.scheduled, 0)}</b>Pendientes</span></div><div className="next-session"><span>▣</span><p><small>PRÓXIMA SESIÓN</small><b>{patient.scheduled ? "Cita programada" : "Sin próxima cita"}</b><em>La agenda clínica se habilitará en la siguiente fase.</em></p></div></section></div><section className="card evolution-preview"><div className="section-head"><div><h2>Evolución</h2><p>Registro clínico inicial</p></div><button className="text-btn" onClick={() => setTab("Evolución")}>Ver progreso →</button></div><p>Aún no hay notas de evolución guardadas para este paciente.</p></section><PatientPortalAccess patient={patient}/></> : <PendingCard title={tab} patient={patient}/> }</div>;
+}
+
+type PortalAccessStatus = {
+  linked: boolean;
+  enabled: boolean;
+  email: string | null;
+  summaryPublished?: boolean;
+  message?: string;
+};
+
+function PatientPortalAccess({ patient }: { patient: Patient }) {
+  const [status, setStatus] = useState<PortalAccessStatus | null>(null);
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const endpoint = `/api/patients/${encodeURIComponent(patient.id)}/portal-access`;
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError("");
+    setMessage("");
+    void fetch(endpoint, { cache: "no-store" })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || "No se pudo consultar el acceso.");
+        if (active) {
+          const nextStatus = body as PortalAccessStatus;
+          setStatus(nextStatus);
+          setEmail(nextStatus.email || "");
+        }
+      })
+      .catch((reason) => {
+        if (active) setError(reason instanceof Error ? reason.message : "No se pudo consultar el acceso.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, [endpoint]);
+
+  const invite = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "No se pudo enviar la invitación.");
+      const nextStatus = body as PortalAccessStatus;
+      setStatus(nextStatus);
+      setEmail(nextStatus.email || email);
+      setMessage(nextStatus.message || "Acceso actualizado.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "No se pudo enviar la invitación.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const revoke = async () => {
+    setSubmitting(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch(endpoint, { method: "DELETE" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "No se pudo desactivar el acceso.");
+      const nextStatus = body as PortalAccessStatus;
+      setStatus(nextStatus);
+      setMessage(nextStatus.message || "Acceso desactivado.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "No se pudo desactivar el acceso.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return <section className="card portal-access-card">
+    <div className="portal-access-heading"><span aria-hidden="true">⌾</span><div><p className="eyebrow">PORTAL DE SOLO LECTURA</p><h2>Acceso del paciente</h2></div>{status?.linked && <em className={status.enabled ? "portal-status active" : "portal-status"}>{status.enabled ? "Activo" : "Desactivado"}</em>}</div>
+    <p className="portal-access-copy">El paciente verá únicamente su resumen publicado, próxima sesión, progreso y actividades indicadas. Nunca verá diagnósticos, dirección ni notas clínicas internas.</p>
+    {loading ? <p className="portal-loading">Consultando acceso…</p> : <>
+      {status?.linked && <div className="portal-linked"><small>CORREO VINCULADO</small><b>{status.email || "Correo no disponible"}</b><span>{status.enabled ? "El paciente puede ingresar o restablecer su contraseña desde la pantalla de acceso." : "El resumen no está visible hasta reactivar este acceso."}</span></div>}
+      {(!status?.linked || !status.enabled) && <form className="portal-invite-form" onSubmit={invite}>
+        <label>Correo electrónico del paciente<input type="email" autoComplete="email" required maxLength={254} value={email} readOnly={Boolean(status?.linked)} onChange={(event) => setEmail(event.target.value)} placeholder="paciente@correo.com" /></label>
+        <button className="primary" type="submit" disabled={submitting || !email}>{submitting ? "Procesando…" : status?.linked ? "Reactivar acceso" : "Enviar invitación"}</button>
+      </form>}
+      {status?.linked && status.enabled && <button className="portal-revoke" type="button" disabled={submitting} onClick={() => void revoke()}>{submitting ? "Procesando…" : "Desactivar acceso"}</button>}
+    </>}
+    {message && <p className="portal-access-success" role="status">{message}</p>}
+    {error && <p className="form-error" role="alert">{error}</p>}
+    <p className="portal-dni-note"><b>No se usa el DNI para iniciar sesión.</b> El acceso se protege con un correo personal y una contraseña creada por el paciente.</p>
+  </section>;
+}
+
+function PendingCard({ title, patient }: { title: string; patient: Patient }) { return <><section className="card evaluation-card"><span className="file-icon">◌</span><h2>{title}</h2><p>{title === "Evolución" || title === "Progreso" ? "El progreso se registra al completar las sesiones clínicas." : "Esta sección se habilitará después del registro inicial."}</p></section>{(title === "Evolución" || title === "Progreso") && <section className="card progress-card"><p className="disclaimer">El progreso representa metas funcionales individuales y no garantiza recuperación.</p>{["Equilibrio", "Marcha", "Transferencias", "Coordinación", "Independencia funcional"].map((name) => <div className="goal" key={name}><span>{name}</span><Progress value={patient.progress}/><b>{patient.progress}%</b></div>)}</section>}</>; }
+
+function Agenda({ mode, setMode }: { mode: "Día" | "Semana"; setMode: (value: "Día" | "Semana") => void }) { return <div className="page"><div className="title-row"><div><p className="eyebrow">PROGRAMACIÓN</p><h1>Agenda</h1><p>La agenda real se habilitará después de la fase de registro de sesiones.</p></div><button className="primary" disabled>＋ Agendar sesión</button></div><div className="agenda-controls"><div className="segmented"><button className={mode === "Día" ? "on" : ""} onClick={() => setMode("Día")}>Día</button><button className={mode === "Semana" ? "on" : ""} onClick={() => setMode("Semana")}>Semana</button></div><button className="date-control" disabled>‹ <b>Agenda privada</b> ›</button></div><section className="card agenda-notice"><span>◌</span><p><b>Agenda en preparación</b><br/>Los pacientes reales ya se guardan de forma privada. La programación, detección de cruces y Google Calendar serán la siguiente entrega.</p></section></div>; }
+
+function Evaluation({ interview, setInterview, type, setType, question, setQuestion, questions, finished, setFinished }: { interview: boolean; setInterview: (value: boolean) => void; type: Therapy; setType: (value: Therapy) => void; question: number; setQuestion: (value: number) => void; questions: string[]; finished: boolean; setFinished: (value: boolean) => void }) {
+  if (!interview) return <div className="page eval-start"><p className="eyebrow">EVALUACIÓN INICIAL</p><h1>Entrevista guiada</h1><p>Realiza una evaluación a la vez, con preguntas claras y una ficha borrador para validar.</p><div className="eval-options"><button className={type === "Física / Deportiva" ? "chosen" : ""} onClick={() => setType("Física / Deportiva")}><span>♧</span><b>Física / Deportiva</b><small>Lesiones musculoesqueléticas, dolor y retorno a actividad.</small></button><button className={type === "Neurológica" ? "chosen" : ""} onClick={() => setType("Neurológica")}><span>◌</span><b>Neurológica</b><small>Movilidad, equilibrio e independencia funcional.</small></button></div><button className="primary large" onClick={() => { setInterview(true); setQuestion(0); setFinished(false); }}>Comenzar evaluación →</button><p className="simulation-note">La grabación, transcripción y borrador siguen en modo de demostración; no se guardan como historia clínica todavía.</p></div>;
+  if (finished) return <div className="page draft"><span className="draft-icon">✓</span><p className="eyebrow">EVALUACIÓN FINALIZADA</p><h1>Borrador de ficha listo</h1><p>Se generó en pantalla a partir de respuestas de demostración. Revísalo y valídalo antes de usarlo clínicamente.</p><section className="card"><h2>Resumen de evaluación · {type}</h2><p><b>Objetivo referido:</b> recuperar seguridad, funcionalidad e independencia en actividades significativas.</p><em className="pill orange">Pendiente de validación profesional</em></section><button className="primary large" onClick={() => setInterview(false)}>Nueva evaluación</button></div>;
+  return <div className="page interview"><div className="interview-top"><button className="back" onClick={() => setInterview(false)}>← Salir</button><span>{type}</span><b>{question + 1} / {questions.length}</b></div><Progress value={((question + 1) / questions.length) * 100}/><p className="eyebrow">PREGUNTA {question + 1}</p><h1>{questions[question]}</h1><div className="recording"><button className="mic">●</button><div><b>Grabación simulada</b><small>Presiona para simular una respuesta por voz</small></div><span>00:00</span></div><div className="transcript"><label>TRANSCRIPCIÓN SIMULADA</label><p>Este contenido no se guarda fuera de esta demostración.</p></div><div className="interview-actions"><button className="secondary" disabled={!question} onClick={() => setQuestion(question - 1)}>← Anterior</button><button className="secondary">No aplica</button><button className="primary" onClick={() => question === questions.length - 1 ? setFinished(true) : setQuestion(question + 1)}>{question === questions.length - 1 ? "Generar borrador" : "Siguiente →"}</button></div></div>;
+}
+
+function NewPatientModal({ onClose, onCreated }: { onClose: () => void; onCreated: (record: PatientRecord) => void }) {
+  const [saving, setSaving] = useState(false); const [error, setError] = useState("");
+  const submit = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setSaving(true); setError(""); try { const response = await fetch("/api/patients", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget).entries())) }); const body = await response.json(); if (!response.ok) throw new Error(body.error || "No se pudo guardar el paciente."); onCreated(body.patient as PatientRecord); } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo guardar el paciente."); } finally { setSaving(false); } };
+  return <div className="modal-backdrop" role="presentation"><section className="patient-modal" role="dialog" aria-modal="true" aria-labelledby="new-patient-title"><div className="modal-head"><div><p className="eyebrow">REGISTRO PROTEGIDO</p><h2 id="new-patient-title">Nuevo paciente</h2></div><button className="modal-close" onClick={onClose} aria-label="Cerrar">×</button></div><p className="privacy-copy">Registra solo la información necesaria para la atención. Este registro se guarda en tu cuenta privada y no se comparte con otros usuarios.</p><form onSubmit={submit} className="patient-form"><label>Nombre completo<input name="full_name" required autoComplete="off" maxLength={120} placeholder="Nombres y apellidos"/></label><div className="form-grid"><label>Fecha de nacimiento<input name="birth_date" type="date" max={new Date().toISOString().slice(0, 10)}/></label><label>Tipo de terapia<select name="therapy_type" defaultValue="Neurológica"><option>Neurológica</option><option>Física / Deportiva</option></select></label></div><label>Diagnóstico médico referido <span>opcional</span><textarea name="diagnosis" maxLength={500} rows={3} placeholder="Información clínica necesaria para la atención"/></label><div className="form-grid"><label>Frecuencia semanal<select name="session_frequency" defaultValue="2/semana"><option>1/semana</option><option>2/semana</option><option>3/semana</option><option>Según evolución</option></select></label><label>Plan de sesiones<input name="plan_sessions" type="number" min="1" max="100" defaultValue="12" required/></label></div><div className="form-grid"><label>Distrito <span>opcional</span><input name="district" autoComplete="off" maxLength={100}/></label><label>Dirección <span>opcional</span><input name="address" autoComplete="off" maxLength={250} placeholder="Solo si es necesaria para la visita"/></label></div>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" className="secondary" onClick={onClose} disabled={saving}>Cancelar</button><button type="submit" className="primary" disabled={saving}>{saving ? "Guardando…" : "Guardar paciente"}</button></div></form></section></div>;
+}
+
