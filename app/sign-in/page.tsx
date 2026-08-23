@@ -2,7 +2,7 @@
 
 import { type FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
+import { createClient, createImplicitClient } from "../lib/supabase/client";
 import "./sign-in.css";
 
 export default function SignInPage() {
@@ -16,6 +16,13 @@ export default function SignInPage() {
   useEffect(() => {
     let active = true;
     try {
+      const linkStatus = new URLSearchParams(window.location.search).get("link");
+      if (linkStatus === "invalid") {
+        setMode("reset");
+        setStatusKind("error");
+        setStatus("El enlace ya venció o fue utilizado. Solicita uno nuevo con tu correo autorizado.");
+        window.history.replaceState({}, document.title, "/sign-in");
+      }
       const authType = new URLSearchParams(window.location.hash.slice(1)).get("type");
       const needsPasswordSetup = authType === "invite" || authType === "recovery";
       const supabase = createClient();
@@ -66,7 +73,7 @@ export default function SignInPage() {
     setSubmitting(true);
 
     try {
-      const supabase = createClient();
+      const supabase = createImplicitClient();
       const redirectTo = new URL("/set-password", window.location.origin).toString();
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
       if (error) {
