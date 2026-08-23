@@ -8,7 +8,7 @@ function getPublicCredentials() {
 }
 
 export async function proxy(request: NextRequest) {
-  const isPublicRoute = request.nextUrl.pathname === "/sign-in" || request.nextUrl.pathname.startsWith("/auth/");
+  const isPublicRoute = request.nextUrl.pathname === "/sign-in" || request.nextUrl.pathname === "/set-password" || request.nextUrl.pathname.startsWith("/auth/");
   const credentials = getPublicCredentials();
   if (!credentials) {
     return isPublicRoute ? NextResponse.next({ request }) : NextResponse.redirect(new URL("/sign-in", request.url));
@@ -20,10 +20,11 @@ export async function proxy(request: NextRequest) {
       getAll() {
         return request.cookies.getAll();
       },
-      setAll(cookiesToSet) {
+      setAll(cookiesToSet, headers) {
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
         response = NextResponse.next({ request });
         cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+        Object.entries(headers).forEach(([name, value]) => response.headers.set(name, value));
       },
     },
   });
