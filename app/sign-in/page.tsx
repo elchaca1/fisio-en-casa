@@ -101,11 +101,11 @@ export default function SignInPage() {
         <div className="sign-in-brand"><span>✦</span><b>Fisio<span>EnCasa</span></b></div>
         {mode === "sign-in" ? (
           <>
-            <p className="sign-in-eyebrow">ACCESO CLÍNICO PRIVADO</p>
-            <h1>Ingresa a tu espacio de trabajo</h1>
-            <p className="sign-in-copy">Los registros de pacientes se muestran únicamente dentro de tu cuenta autorizada.</p>
+            <p className="sign-in-eyebrow">ACCESO PRIVADO</p>
+            <h1>Ingresa a FisioEnCasa</h1>
+            <p className="sign-in-copy">Accede con la cuenta autorizada para tu perfil de fisioterapeuta o paciente.</p>
             <form onSubmit={submit}>
-              <label>Correo profesional<input name="email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="tu@correo.com" /></label>
+              <label>Correo electrónico<input name="email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="tu@correo.com" /></label>
               <label>Contraseña<input name="password" type="password" autoComplete="current-password" required minLength={8} placeholder="Tu contraseña" /></label>
               {status && <p className="sign-in-error" role="alert">{status}</p>}
               <button className="sign-in-submit" type="submit" disabled={submitting}>{submitting ? "Ingresando…" : "Ingresar de forma segura"}</button>
@@ -119,7 +119,7 @@ export default function SignInPage() {
             <h1>Crea una contraseña nueva</h1>
             <p className="sign-in-copy">Escribe el correo de tu cuenta autorizada y te enviaremos un enlace seguro.</p>
             <form onSubmit={requestPasswordLink}>
-              <label>Correo profesional<input name="email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="tu@correo.com" /></label>
+              <label>Correo electrónico<input name="email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="tu@correo.com" /></label>
               {status && <p className={statusKind === "success" ? "sign-in-success" : "sign-in-error"} role={statusKind === "success" ? "status" : "alert"}>{status}</p>}
               <button className="sign-in-submit" type="submit" disabled={submitting}>{submitting ? "Enviando…" : "Enviar enlace seguro"}</button>
             </form>
